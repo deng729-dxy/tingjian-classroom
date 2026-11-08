@@ -8,7 +8,7 @@ document.querySelectorAll('.page').forEach(p=>{const bar=document.createElement(
 function renderFollow(t){
  const here=scorePositionAt(events,t);
  document.querySelectorAll('.follow-bar').forEach(b=>b.hidden=true);
- if(!here)return;if($('scores').dataset.mode==='melody_alignment')$('mapStatus').textContent=events[here.index].holding?events[here.index].text+' · 当前位置保持':'全曲旋律跟随 · 音符 '+events[here.index].text+' · 自动对齐';
+ if(!here)return;if($('scores').dataset.mode==='melody_alignment')$('mapStatus').textContent=events[here.index].holding?events[here.index].text+' · 当前位置保持':'旋律跟随 · 音符 '+events[here.index].text+' · 自动对齐';
  const page=document.querySelector(`[data-page="${here.page}"]`),bar=page.querySelector('.follow-bar');
  if($('showBar').checked){bar.hidden=false;bar.style.left=here.x*100+'%';bar.style.top=(here.y-.008)*100+'%';bar.style.height=(here.h+.016)*100+'%'}
  if(!$('follow').checked)return;
