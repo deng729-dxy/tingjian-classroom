@@ -20,7 +20,7 @@ function manualTracks(map){
 }
 async function openManualEditor(song){
  if(!ownerAccess||song.id==='builtin'||manualEditorOpen)return;
- pause();try{
+ pause();manualEditorOpen=true;status('正在打开人工校准…');try{
   const data=await manualAPI(song.id);await loadSong(song);pause();
   let map={};try{const r=await fetch(`library/${song.id}/score-map.json?v=${Date.now()}`,{cache:'no-store'});if(r.ok)map=await r.json()}catch{}
   const base=data.saved||{version:1,tracks:[],segments:[]},tracks=new Map(manualTracks(map).map(r=>[r.id,r]));for(const r of base.tracks)tracks.set(r.id,r);
@@ -40,7 +40,7 @@ async function openManualEditor(song){
   manualDialog.querySelector('[data-prepare]').onclick=()=>listen('prepare');manualDialog.querySelector('[data-original]').onclick=()=>listen('original');manualDialog.querySelector('[data-preview]').onclick=()=>listen('modified');manualDialog.querySelector('[data-pause]').onclick=()=>{manualFinishTake();pause();s.preview=null};
   for(const [key,id] of [['bg','bg'],['vg','vg']]){const input=manualDialog.querySelector('[data-'+key+']');input.value=$(id).value;input.oninput=()=>{$(id).value=input.value;volume()}}
   const speed=manualDialog.querySelector('[data-speed]');speed.value=String(Number($('speed').value));speed.onchange=()=>{$('speed').value=speed.value;$('speed').onchange()};
-  manualDialog.querySelector('[data-add]').onclick=()=>{s.mode='add';manualMessage('在谱面上从该行上边界拖到下边界，框选整行高度。')};manualDialog.querySelector('[data-adjust]').onclick=()=>{if(!manualDialog.querySelector('[data-track]').value)return manualMessage('请先选择要调整的谱行');s.mode='adjust';manualMessage('在该页重新框选行高，会同时调整引用这行的人工片段。')};
+  manualDialog.querySelector('[data-add]').onclick=()=>{pause();s.preview=null;s.mode='add';manualMessage('在谱面上从该行上边界拖到下边界，框选整行高度。')};manualDialog.querySelector('[data-adjust]').onclick=()=>{pause();s.preview=null;if(!manualDialog.querySelector('[data-track]').value)return manualMessage('请先选择要调整的谱行');s.mode='adjust';manualMessage('在该页重新框选行高，会同时调整引用这行的人工片段。')};
   manualDialog.querySelector('[data-undo]').onclick=()=>manualUndo(false);manualDialog.querySelector('[data-redo]').onclick=()=>manualUndo(true);
   manualDialog.querySelector('[data-reset]').onclick=()=>{if(!s.confirmed)return manualMessage('请先确认要恢复的 A/B 片段');const before=manualClone(s.layer);s.layer.segments=ManualPath.subtract(s.layer.segments,s.a,s.b);manualChanged(s,before);manualMessage('所选范围恢复自动路径，其他人工片段保留；保存后生效。')};
   manualDialog.querySelector('[data-save]').onclick=()=>manualSave(s);manualDialog.querySelector('[data-close]').onclick=()=>manualClose();
@@ -72,7 +72,7 @@ function manualFinishTake(){const s=manualSession;if(!s?.recording)return;const 
 function manualToggleRecording(value){for(const el of manualDialog.querySelectorAll('input:not([data-bg]):not([data-vg]),select,button:not([data-pause])'))el.disabled=value;manualDialog.querySelector('[data-rec]').textContent=value?'● 正在记录鼠标路径':'';if(!value)manualRefreshSegments();}
 function manualEditorRender(t){const s=manualSession;if(!manualEditorOpen||!s)return;
  manualDialog.querySelector('[data-clock]').textContent=clock(t)+' / '+clock(s.duration);
- if(s.preview==='prepare'&&!s.pending&&t>=s.a){s.preview=null;pause();seek(s.a);s.prepared=true;manualMessage('已到起点，在谱行上按住鼠标即可录制。')}
+ if(s.preview==='prepare'&&!s.pending&&t>=s.a){s.preview=null;pause();s.pending=true;seek(s.a).then(()=>{if(manualSession===s){s.prepared=true;manualMessage('已到起点，在谱行上按住鼠标即可录制。')}}).catch(error=>manualMessage(error.message)).finally(()=>s.pending=false)}
  if(s.recording){manualToggleRecording(true);if(!playing){manualFinishTake();return}if(t>s.take.points.at(-1).t+.000001||t>=s.b){manualSample(s,Math.min(t,s.b));}if(t>=s.b){manualFinishTake();seek(s.b)}
   const view=manualDialog.querySelector('.manual-view'),rect=view.getBoundingClientRect();if(s.pointer.y>rect.bottom-45&&s.pointer.y<rect.bottom&&s.pointer.x>rect.left&&s.pointer.x<rect.right)view.scrollTop+=3;
  }
