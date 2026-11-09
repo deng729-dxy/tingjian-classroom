@@ -2,6 +2,7 @@
 const $=id=>document.getElementById(id), audios=[new Audio(),new Audio()];
 audios.forEach((a,i)=>{a.id=i?'vocalTrack':'backingTrack';a.hidden=true;document.body.append(a)});
 let ctx,gains,playing=false,events=[],duration=0,lastNote=-1,urls=[];
+const bufferProgress=new AudioBufferProgress(audios,$("audioBuffer"));
 const seekController=new DualTrackSeek(audios);let dragging=false,dragResume=false,previewTime=null,seekResume=false;
 let pitchCandidates=[],seekEpoch=0;
 let lastFollowLine='';
@@ -34,7 +35,7 @@ function pause(){seekResume=false;audios.forEach(a=>a.pause());playing=false;$('
 async function init(){if(ctx)return;ctx=new (window.AudioContext||window.webkitAudioContext)();gains=audios.map(a=>{const g=ctx.createGain();ctx.createMediaElementSource(a).connect(g).connect(ctx.destination);return g});volume();}
 function volume(){['bg','vg'].forEach((id,i)=>{const v=Number($(id).value)/100;$(id+'Value').value=Math.round(v*100)+'%';if(gains)gains[i].gain.setTargetAtTime(v,ctx.currentTime,.015)})}
 ['bg','vg'].forEach(id=>$(id).oninput=volume);
-['backFile','voiceFile'].forEach((id,i)=>$(id).onchange=()=>{pause();const f=$(id).files[0];if(!f)return;if(urls[i])URL.revokeObjectURL(urls[i]);urls[i]=URL.createObjectURL(f);audios[i].src=urls[i];$('play').disabled=true;audios[i].load();status('正在加载 '+f.name)});
+['backFile','voiceFile'].forEach((id,i)=>$(id).onchange=()=>{pause();const f=$(id).files[0];if(!f)return;if(urls[i])URL.revokeObjectURL(urls[i]);urls[i]=URL.createObjectURL(f);audios[i].src=urls[i];$('play').disabled=true;audios[i].load();bufferProgress.start();status('正在加载 '+f.name)});
 audios.forEach(a=>{a.preload='auto';a.preservesPitch=true;a.onloadedmetadata=()=>{if(audios.every(x=>Number.isFinite(x.duration)&&x.duration>0)){duration=Math.min(...audios.map(x=>x.duration));$('seek').max=duration;$('seek').disabled=false;$('play').disabled=false;status('双轨已加载；起点和逐音同步尚需人工核验。'+(Math.abs(audios[0].duration-audios[1].duration)>.2?' 两轨时长不一致，播放以较短音轨为准。':''))}};a.onerror=()=>{pause();$('play').disabled=true;status('音频读取失败，请检查文件格式。')};a.onended=pause;});
 $('play').onclick=async()=>{if(seekController.busy){seekController.cancel();pause();return}if(playing){pause();return}try{await init();await ctx.resume();seekResume=true;await seek(audios[0].currentTime>=duration-.05?0:audios[0].currentTime);status('双轨试听中 · 音频内容与同步尚未验收')}catch(e){pause();status('无法播放：'+e.message)}};
 async function seek(t){
@@ -63,7 +64,7 @@ setInterval(()=>{if(playing){if(audios[0].currentTime>=duration){pause();return}
 function animationFrame(){if(playing||dragging)render();requestAnimationFrame(animationFrame)}requestAnimationFrame(animationFrame);
 // Built-in stems share the untouched MV timeline. No automatic playback.
 audios[0].src='assets/accompaniment.m4a';
-audios[1].src='assets/vocals.m4a';
+audios[1].src='assets/vocals.m4a';bufferProgress.start();
 $('reference').addEventListener('play',pause);
 const oldPlay=$('play').onclick;
 $('play').onclick=async()=>{$('reference').pause();await oldPlay()};
