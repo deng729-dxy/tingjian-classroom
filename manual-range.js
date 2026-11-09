@@ -8,9 +8,9 @@ function candidates(events,layer,page,x,y,endpoint){
  for(const segment of layer?.segments||[]){for(let i=0;i<segment.points.length-1;i++){const a=segment.points[i],b=segment.points[i+1],track=layer.tracks.find(r=>r.id===a.track);if(!track||track.page!==page||y<track.y-.012||y>track.y+track.h+.012)continue;
   if(b.jump||a.track!==b.track){if(Math.abs(x-a.x)<.015)hits.push({time:endpoint==='end'?b.t:a.t,label:'人工路径',page,x:a.x,y:track.y,h:track.h});continue}
   if(x<Math.min(a.x,b.x)-.005||x>Math.max(a.x,b.x)+.005)continue;
-  const t=Math.abs(b.x-a.x)<.002?(endpoint==='end'?b.t:a.t):a.t+Math.max(0,Math.min(1,(x-a.x)/(b.x-a.x)))*(b.t-a.t);hits.push({time:t,label:'人工路径',page,x,y:track.y,h:track.h});
+  const t=Math.abs(b.x-a.x)<.002?(endpoint==='end'?b.t:a.t):a.t+Math.max(0,Math.min(1,(x-a.x)/(b.x-a.x)))*(b.t-a.t);hits.push({time:t,label:'人工路径',page,x,y:track.y,h:track.h,...(Math.abs(b.x-a.x)<.002?{lo:a.t,hi:b.t}:{})});
  }}
- hits.sort((a,b)=>a.time-b.time);const groups=[];for(const hit of hits){const last=groups.at(-1);if(!last||hit.time-last.at(-1).time>.08)groups.push([hit]);else last.push(hit)}return groups.map(g=>endpoint==='end'?g.at(-1):g[0]);
+ hits.sort((a,b)=>a.time-b.time);const groups=[];for(const hit of hits){const last=groups.at(-1),end=last?Math.max(...last.map(p=>p.hi??p.time)):-Infinity;if(!last||(hit.lo??hit.time)-end>.08)groups.push([hit]);else last.push(hit)}return groups.map(g=>endpoint==='end'?g.at(-1):g[0]);
 }
 const api={timeAt,candidates};scope.ManualRange=api;if(typeof module!=='undefined')module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);
