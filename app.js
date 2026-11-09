@@ -13,7 +13,7 @@ function renderFollow(t){
  const here=ManualPath.positionAt(activeManual,t)||scorePositionAt(events,t);
  document.querySelectorAll('.follow-bar').forEach(b=>b.hidden=true);
  if(!here)return;if($('scores').dataset.mode==='melody_alignment')$('mapStatus').textContent=here.source==='manual'?'教师人工路径 · 已保存片段':events[here.index].holding?events[here.index].text+' · 当前位置保持':'旋律跟随 · 音符 '+events[here.index].text+' · 自动对齐';
- const page=document.querySelector(`[data-page="${here.page}"]`),bar=page.querySelector('.follow-bar');
+ const page=document.querySelector(`[data-page="${here.page}"]`);if(!page)return;const bar=page.querySelector('.follow-bar');
  if($('showBar').checked){bar.hidden=false;bar.style.left=here.x*100+'%';bar.style.top=(here.y-.008)*100+'%';bar.style.height=(here.h+.016)*100+'%';const pulse=playing&&!reducedFollowMotion.matches?scoreBeatPulseAt(activeBeats,t):0;bar.style.filter=`brightness(${1+pulse*.3})`;bar.style.boxShadow=`0 0 0 ${3+pulse}px #92e5d535,0 0 ${12+pulse*7}px #4ebba175`;}
  if(!$('follow').checked)return;
  // Preview the upcoming location without moving the current-time indicator ahead.
