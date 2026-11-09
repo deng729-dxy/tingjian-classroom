@@ -5,18 +5,19 @@ let ctx,gains,playing=false,events=[],duration=0,lastNote=-1,urls=[];
 const seekController=new DualTrackSeek(audios);let dragging=false,dragResume=false,previewTime=null,seekResume=false;
 let pitchCandidates=[],seekEpoch=0;
 let lastFollowLine='';
-let activeBeats=[];
+let activeBeats=[],activeManual=null,manualEditorOpen=false;
 const reducedFollowMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
 document.querySelectorAll('.page').forEach(p=>{const bar=document.createElement('div');bar.className='follow-bar';bar.hidden=true;p.append(bar)});
 function renderFollow(t){
- const here=scorePositionAt(events,t);
+ if(manualEditorOpen){manualEditorRender(t);return;}
+ const here=ManualPath.positionAt(activeManual,t)||scorePositionAt(events,t);
  document.querySelectorAll('.follow-bar').forEach(b=>b.hidden=true);
- if(!here)return;if($('scores').dataset.mode==='melody_alignment')$('mapStatus').textContent=events[here.index].holding?events[here.index].text+' · 当前位置保持':'旋律跟随 · 音符 '+events[here.index].text+' · 自动对齐';
+ if(!here)return;if($('scores').dataset.mode==='melody_alignment')$('mapStatus').textContent=here.source==='manual'?'教师人工路径 · 已保存片段':events[here.index].holding?events[here.index].text+' · 当前位置保持':'旋律跟随 · 音符 '+events[here.index].text+' · 自动对齐';
  const page=document.querySelector(`[data-page="${here.page}"]`),bar=page.querySelector('.follow-bar');
  if($('showBar').checked){bar.hidden=false;bar.style.left=here.x*100+'%';bar.style.top=(here.y-.008)*100+'%';bar.style.height=(here.h+.016)*100+'%';const pulse=playing&&!reducedFollowMotion.matches?scoreBeatPulseAt(activeBeats,t):0;bar.style.filter=`brightness(${1+pulse*.3})`;bar.style.boxShadow=`0 0 0 ${3+pulse}px #92e5d535,0 0 ${12+pulse*7}px #4ebba175`;}
  if(!$('follow').checked)return;
  // Preview the upcoming location without moving the current-time indicator ahead.
- const ahead=scorePositionAt(events,t+Number($('lookAhead').value)*Number($('speed').value))||here;
+ const ahead=ManualPath.positionAt(activeManual,t+Number($('lookAhead').value)*Number($('speed').value))||scorePositionAt(events,t+Number($('lookAhead').value)*Number($('speed').value))||here;
  const key=ahead.page+':'+Math.round(ahead.y*100);
  if(key===lastFollowLine)return;
  lastFollowLine=key;
@@ -57,7 +58,7 @@ function draw(){const pitched=events.filter(n=>!n.rest&&!n.holding&&n.midi>0);if
 function scrub(e){if((!events.length&&!pitchCandidates.length)||!duration)return;const r=$('contour').getBoundingClientRect();previewScrub((e.clientX-r.left)/r.width*(events.at(-1)?.end||duration))}
 $('contour').onpointerdown=e=>{$('contour').setPointerCapture(e.pointerId);beginScrub();scrub(e)};$('contour').onpointermove=e=>{if($('contour').hasPointerCapture(e.pointerId))scrub(e)};
 $('contour').onpointerup=endScrub;$('contour').onpointercancel=endScrub;
-function render(){if(dragging){renderFollow(previewTime||0);return}const t=audios[0].currentTime||0;renderFollow(t);$('time').textContent=`${clock(t)} / ${clock(duration)}`;$('seek').value=t;let idx=events.findIndex(n=>t>=n.start&&t<n.end);if(idx!==lastNote){document.querySelectorAll('.note').forEach(b=>{const i=Number(b.dataset.index);b.classList.toggle('active',i===idx);b.classList.toggle('next',idx>=0&&i===idx+1)});if(false){const next=events[Math.min(idx+1,events.length-1)];const p=document.querySelector(`[data-page="${next.page}"]`);const y=p.getBoundingClientRect().top+next.y*p.clientHeight;if(y>innerHeight-260||y<120)window.scrollTo({top:Math.max(0,scrollY+y-innerHeight*.3),behavior:'smooth'})}lastNote=idx}const cursor=$('cursor');if(cursor){const x=t/events.at(-1).end*1000;cursor.setAttribute('x1',x);cursor.setAttribute('x2',x)}}
+function render(){if(manualEditorOpen){manualEditorRender(audios[0].currentTime||0);return}if(dragging){renderFollow(previewTime||0);return}const t=audios[0].currentTime||0;renderFollow(t);$('time').textContent=`${clock(t)} / ${clock(duration)}`;$('seek').value=t;let idx=events.findIndex(n=>t>=n.start&&t<n.end);const manual=ManualPath.positionAt(activeManual,t);if(manual){idx=events.findIndex(n=>!n.holding&&n.page===manual.page&&manual.x>=n.x&&manual.x<=n.x+n.w&&Math.abs((n.followY??n.y)-manual.y)<manual.h);}if(idx!==lastNote){document.querySelectorAll('.note').forEach(b=>{const i=Number(b.dataset.index);b.classList.toggle('active',i===idx);b.classList.toggle('next',idx>=0&&i===idx+1)});if(false){const next=events[Math.min(idx+1,events.length-1)];const p=document.querySelector(`[data-page="${next.page}"]`);const y=p.getBoundingClientRect().top+next.y*p.clientHeight;if(y>innerHeight-260||y<120)window.scrollTo({top:Math.max(0,scrollY+y-innerHeight*.3),behavior:'smooth'})}lastNote=idx}const cursor=$('cursor');if(cursor){const x=t/events.at(-1).end*1000;cursor.setAttribute('x1',x);cursor.setAttribute('x2',x)}}
 setInterval(()=>{if(playing){if(audios[0].currentTime>=duration){pause();return}const drift=audios[1].currentTime-audios[0].currentTime,rate=Number($('speed').value);if(!seekController.busy){if(Math.abs(drift)>.4){seek(audios[0].currentTime);return}/* Playback rate changes only when the teacher selects a speed. */}}render()},250);
 function animationFrame(){if(playing||dragging)render();requestAnimationFrame(animationFrame)}requestAnimationFrame(animationFrame);
 // Built-in stems share the untouched MV timeline. No automatic playback.
