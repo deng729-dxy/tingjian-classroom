@@ -18,6 +18,7 @@ function clip(segment,a,b){
 function subtract(segments,a,b){return segments.flatMap(s=>s.end<=a||s.start>=b?[s]:[clip(s,s.start,a),clip(s,b,s.end)].filter(Boolean));}
 function insert(segments,take){return [...subtract(segments,take.start,take.end),take].sort((a,b)=>a.start-b.start);}
 function trim(segment,a,b){return clip(segment,a,b);}
+function shift(segment,delta){return {...segment,start:segment.start+delta,end:segment.end+delta,points:segment.points.map(p=>({...p,t:p.t+delta}))};}
 function resample(segment,width=850){
  const times=[segment.start,segment.end];for(let i=1;segment.start+i/30<segment.end;i++)times.push(segment.start+i/30);
  for(const p of segment.points)if(p.jump)times.push(p.t);
@@ -25,5 +26,5 @@ function resample(segment,width=850){
  for(const p of segment.points){const q=pointAt(sampled,p.t);if(q.track!==p.track||Math.abs(q.x-p.x)*width>2)times.push(p.t)}
  times.sort((a,b)=>a-b);return {...segment,points:times.filter((t,i)=>!i||t-times[i-1]>1e-8).map(t=>pointAt(segment,t))};
 }
-const api={pointAt,positionAt,clip,subtract,insert,trim,resample};scope.ManualPath=api;if(typeof module!=='undefined')module.exports=api;
+const api={pointAt,positionAt,clip,subtract,insert,trim,shift,resample};scope.ManualPath=api;if(typeof module!=='undefined')module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);
