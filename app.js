@@ -63,8 +63,7 @@ function render(){if(manualEditorOpen){manualEditorRender(audios[0].currentTime|
 setInterval(()=>{if(playing){if(audios[0].currentTime>=duration){pause();return}const drift=audios[1].currentTime-audios[0].currentTime,rate=Number($('speed').value);if(!seekController.busy){if(Math.abs(drift)>.4){seek(audios[0].currentTime);return}/* Playback rate changes only when the teacher selects a speed. */}}render()},250);
 function animationFrame(){if(playing||dragging)render();requestAnimationFrame(animationFrame)}requestAnimationFrame(animationFrame);
 // Built-in stems share the untouched MV timeline. No automatic playback.
-audios[0].src='assets/accompaniment.m4a';
-audios[1].src='assets/vocals.m4a';bufferProgress.start();
+// The library selects the initial song; do not download the built-in tracks first.
 $('reference').addEventListener('play',pause);
 const oldPlay=$('play').onclick;
 $('play').onclick=async()=>{$('reference').pause();await oldPlay()};
