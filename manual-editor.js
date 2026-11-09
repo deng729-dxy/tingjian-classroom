@@ -89,3 +89,39 @@ async function manualSave(s){if(s.recording||s.pending)return;pause();const butt
 async function manualClose(){const s=manualSession;if(!s||s.closing)return;if(s.recording){manualFinishTake();return}s.closing=true;seekController.cancel();seekEpoch++;pause();if(s.dirty){manualMessage('正在保留本机草稿…');try{await manualLocal('put',s.key,{...manualClone(manualPayload(s)),updatedAt:new Date().toISOString()});manualDraft(s)}catch{s.closing=false;manualMessage('无法保留本机草稿，请先保存后再关闭。');return}}manualDialog.close();manualEditorOpen=false;manualSession=null;$('speed').value=s.previousSpeed;$('speed').onchange();render();}
 manualDialog.addEventListener('cancel',e=>{e.preventDefault();manualClose()});
 window.addEventListener('blur',()=>{if(manualSession?.recording)manualFinishTake()});document.addEventListener('visibilitychange',()=>{if(document.hidden&&manualSession?.recording)manualFinishTake()});
+
+function manualTimeText(time){return clock(time)+'.'+Math.floor((time%1)*1000).toString().padStart(3,'0');}
+function manualPaintRange(){
+ const s=manualSession,bar=manualDialog.querySelector('.manual-timebar');if(!s||!bar)return;
+ const span=s.timeWindow||{start:0,end:Math.min(s.duration,30)},a=+(manualDialog.querySelector('[data-a]')?.value||0),b=+(manualDialog.querySelector('[data-b]')?.value||0),width=span.end-span.start||1;
+ const percent=t=>Math.max(0,Math.min(100,(t-span.start)/width*100));
+ bar.querySelector('.manual-time-selected').style.cssText=`left:${percent(a)}%;width:${Math.max(0,percent(b)-percent(a))}%`;
+ for(const [selector,value] of [['.manual-time-a',s.mouseRange?.time??a],['.manual-time-b',b]])bar.querySelector(selector).style.left=percent(value)+'%';
+ manualDialog.querySelector('[data-range-label]').textContent=s.mouseRange?'A 已选 '+manualTimeText(s.mouseRange.time)+'，请点 B 终点':'所选 '+manualTimeText(a)+' — '+manualTimeText(b);
+ bar.setAttribute('aria-valuemin',span.start);bar.setAttribute('aria-valuemax',span.end);bar.setAttribute('aria-valuetext',manualDialog.querySelector('[data-range-label]').textContent);
+ const ticks=bar.querySelector('.manual-time-ticks');ticks.replaceChildren();for(let i=0;i<=4;i++){const text=document.createElement('span');text.style.left=i*25+'%';text.textContent=clock(span.start+width*i/4);ticks.append(text)}
+ for(const page of manualDialog.querySelectorAll('.manual-page')){page.querySelectorAll('.manual-range-pin').forEach(p=>p.remove());for(const [i,spot] of (s.rangeSpots||[]).entries()){if(!spot||spot.page!==+page.dataset.page)continue;const pin=document.createElement('div');pin.className='manual-range-pin '+(i?'end':'start');pin.textContent=i?'B':'A';pin.style.cssText=`left:${spot.x*100}%;top:${spot.y*100}%;height:${spot.h*100}%`;page.append(pin)}}
+}
+function manualInitMouseRange(s){
+ s.scoreEvents=events.slice();s.timeWindow={start:0,end:Math.min(s.duration,30)};s.rangeSpots=[];
+ const bar=manualDialog.querySelector('.manual-timebar');let drag=null;
+ const time=e=>{const r=bar.getBoundingClientRect();return ManualRange.timeAt(e.clientX,r.left,r.width,s.timeWindow.start,s.timeWindow.end)};
+ bar.onpointerdown=e=>{if(e.button!==0||s.recording)return;e.preventDefault();manualBeginRange();s.mode=null;drag={time:time(e),x:e.clientX};bar.setPointerCapture(e.pointerId)};
+ bar.onpointermove=e=>{if(!drag)return;if(Math.abs(e.clientX-drag.x)>4){s.setRange(Math.min(drag.time,time(e)),Math.max(drag.time,time(e)));manualMessage('松手确认框选的音乐范围。')}};
+ bar.onpointerup=e=>{if(!drag)return;const start=drag,finish=time(e);drag=null;s.rangeSpots=[];if(Math.abs(e.clientX-start.x)>4){s.mouseRange=null;manualApplyMouseRange(Math.min(start.time,finish),Math.max(start.time,finish));}else manualAcceptTime(finish,null);};bar.onpointercancel=()=>{drag=null};
+ manualDialog.querySelector('[data-time-zoom]').onchange=e=>{if(s.recording)return;const size=e.target.value==='all'?s.duration:+e.target.value,center=audios[0].currentTime||0,start=Math.max(0,Math.min(Math.max(0,s.duration-size),center-size/2));s.timeWindow={start,end:Math.min(s.duration,start+size)};manualPaintRange()};
+ manualDialog.querySelector('[data-pick-score]').onclick=()=>{manualBeginRange();s.mouseRange=null;s.rangeSpots=[];s.mode='range-points';manualMessage('请在谱面上点 A 起点，再点 B 终点；有反复时会列出演唱次数供选择。');manualPaintRange()};
+ manualDialog.querySelector('[data-box-score]').onclick=()=>{manualBeginRange();s.mouseRange=null;s.rangeSpots=[];s.mode='range-box';manualMessage('在谱面上按住拖出一段，松手后选择对应的演唱位置。跨页请使用两点选择。');manualPaintRange()};
+ manualDialog.querySelector('[data-cancel-pick]').onclick=()=>{s.mode=null;s.mouseRange=null;s.rangeDrag=null;manualDialog.querySelector('[data-range-choices]').replaceChildren();manualDialog.querySelectorAll('.manual-range-box').forEach(n=>n.remove());manualPaintRange();manualMessage('已取消选点；可以重新选择时间范围。')};manualPaintRange();
+}
+function manualBeginRange(){const s=manualSession;if(!s)return;pause();s.preview=null;s.prepared=false;s.confirmed=false;}
+function manualApplyMouseRange(a,b){const s=manualSession;if(b-a<.05)return manualMessage('选择太短，请把两个点拉开一点。');s.setRange(a,b);s.confirmRange();s.mode=null;s.mouseRange=null;manualPaintRange();manualMessage(`已用鼠标选定 ${manualTimeText(a)}—${manualTimeText(b)}，点击“准备录制”即可。`);}
+function manualAcceptTime(time,spot){const s=manualSession;if(!s.mouseRange){s.mouseRange={time,spot};s.rangeSpots=[spot];manualPaintRange();manualMessage('起点 A 已标记，请再点终点 B。');return;}const first=s.mouseRange;if(time-first.time<.05){manualMessage('终点必须晚于起点；反复段可选后一次演唱，或改用下面的时间条。');return;}s.rangeSpots=[first.spot,spot];manualApplyMouseRange(first.time,time);}
+function manualChooseScore(where,endpoint,callback){const s=manualSession,list=manualDialog.querySelector('[data-range-choices]');list.replaceChildren();let choices=ManualRange.candidates(s.scoreEvents,s.layer,where.page,where.x,where.y,endpoint);if(endpoint==='end'&&s.mouseRange)choices=choices.filter(c=>c.time>s.mouseRange.time+.05);
+ if(!choices.length){manualMessage('此处没有可用的时间定位，或终点早于起点。可在时间条上点两点，无需输入秒数。');return;}
+ if(choices.length===1){callback(choices[0]);return;}
+ const text=document.createElement('p');text.textContent='这处对应多个时间，请按演唱次数选择 '+(endpoint==='end'?'B 终点':'A 起点')+'：';list.append(text);choices.forEach((choice,i)=>{const button=document.createElement('button');button.textContent=`第${i+1}处 · ${manualTimeText(choice.time)} · ${choice.label}`;button.onclick=()=>{list.replaceChildren();callback(choice)};list.append(button)});manualMessage('反复或人工路径产生了多个时间，请先选择，系统不会替你猜。');
+}
+function manualPickScore(where){const s=manualSession,endpoint=s.mouseRange?'end':'start';manualChooseScore(where,endpoint,choice=>manualAcceptTime(choice.time,choice));}
+function manualRangeBoxPreview(e){const s=manualSession,drag=s.rangeDrag,where=manualPointerLocation(e.clientX,e.clientY);manualDialog.querySelectorAll('.manual-range-box').forEach(n=>n.remove());if(!where||where.page!==drag.where.page)return;const box=document.createElement('div');box.className='manual-range-box';box.style.cssText=`left:${Math.min(where.x,drag.where.x)*100}%;top:${Math.min(where.y,drag.where.y)*100}%;width:${Math.abs(where.x-drag.where.x)*100}%;height:${Math.max(.006,Math.abs(where.y-drag.where.y))*100}%`;where.element.append(box);}
+function manualRangeBoxFinish(drag,e){const s=manualSession,where=manualPointerLocation(e.clientX,e.clientY);manualDialog.querySelectorAll('.manual-range-box').forEach(n=>n.remove());if(!where||where.page!==drag.where.page)return manualMessage('跨页范围请用“谱面点选两点”。');let a=drag.where,b=where;if(b.y<a.y-.018||Math.abs(b.y-a.y)<.018&&b.x<a.x)[a,b]=[b,a];s.mouseRange=null;s.rangeSpots=[];manualChooseScore(a,'start',choice=>{manualAcceptTime(choice.time,choice);manualChooseScore(b,'end',end=>manualAcceptTime(end.time,end))});}
