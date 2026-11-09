@@ -3,7 +3,7 @@ const $=id=>document.getElementById(id), audios=[new Audio(),new Audio()];
 audios.forEach((a,i)=>{a.id=i?'vocalTrack':'backingTrack';a.hidden=true;document.body.append(a)});
 let ctx,gains,playing=false,events=[],duration=0,lastNote=-1,urls=[];
 const seekController=new DualTrackSeek(audios);let dragging=false,dragResume=false,previewTime=null,seekResume=false;
-let pitchCandidates=[];
+let pitchCandidates=[],seekEpoch=0;
 let lastFollowLine='';
 document.querySelectorAll('.page').forEach(p=>{const bar=document.createElement('div');bar.className='follow-bar';bar.hidden=true;p.append(bar)});
 function renderFollow(t){
@@ -35,8 +35,9 @@ function volume(){['bg','vg'].forEach((id,i)=>{const v=Number($(id).value)/100;$
 audios.forEach(a=>{a.preload='auto';a.preservesPitch=true;a.onloadedmetadata=()=>{if(audios.every(x=>Number.isFinite(x.duration)&&x.duration>0)){duration=Math.min(...audios.map(x=>x.duration));$('seek').max=duration;$('seek').disabled=false;$('play').disabled=false;status('双轨已加载；起点和逐音同步尚需人工核验。'+(Math.abs(audios[0].duration-audios[1].duration)>.2?' 两轨时长不一致，播放以较短音轨为准。':''))}};a.onerror=()=>{pause();$('play').disabled=true;status('音频读取失败，请检查文件格式。')};a.onended=pause;});
 $('play').onclick=async()=>{if(seekController.busy){seekController.cancel();pause();return}if(playing){pause();return}try{await init();await ctx.resume();seekResume=true;await seek(audios[0].currentTime>=duration-.05?0:audios[0].currentTime);status('双轨试听中 · 音频内容与同步尚未验收')}catch(e){pause();status('无法播放：'+e.message)}};
 async function seek(t){
+ const epoch=++seekEpoch;
  t=Math.max(0,Math.min(duration,t));const resume=playing||seekResume;seekResume=resume;playing=false;audios.forEach(a=>a.pause());lastNote=-1;
- try{const done=await seekController.seek(t,resume);if(done){playing=resume;seekResume=false;$('play').textContent=playing?'Ⅱ 暂停':'▶ 播放';render();}}catch(error){pause();status(error.message)}
+ try{const done=await seekController.seek(t,resume);if(done&&epoch===seekEpoch){playing=resume;seekResume=false;$('play').textContent=playing?'Ⅱ 暂停':'▶ 播放';render();}}catch(error){if(epoch===seekEpoch){pause();status(error.message)}}
 }
 function beginScrub(){if(dragging)return;dragging=true;dragResume=playing||seekResume;seekController.cancel();pause();previewTime=audios[0].currentTime;}
 function previewScrub(t){previewTime=Math.max(0,Math.min(duration,t));renderFollow(previewTime);$('time').textContent=`${clock(previewTime)} / ${clock(duration)}`;}
