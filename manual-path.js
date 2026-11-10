@@ -29,7 +29,7 @@ function resample(segment,width=850){
 function applyCorrection(layer,regions,a,b,proposal){
  if(!Number.isFinite(a)||!Number.isFinite(b)||b-a<.05||b-a>60)throw Error('请选择0.05至60秒的校准片段');
  const out=JSON.parse(JSON.stringify(layer)),trackIds=new Set(out.tracks.map(t=>t.id));
- const usable=regions.map((n,i)=>({...n,regionId:i})).filter(n=>n.end>=a-2&&n.start<=b+2&&!n.holding);
+ const usable=regions.map((n,i)=>({...n,regionId:i})).filter(n=>!n.holding);
  function auto(n,x){const id='text-p'+n.page+'r'+(n.row??Math.round((n.followY??n.y)*100));if(!trackIds.has(id)){const row=regions.filter(v=>v.page===n.page&&(v.row??Math.round((v.followY??v.y)*100))===(n.row??Math.round((n.followY??n.y)*100))&&!v.holding);const y=Math.max(0,Math.min(...row.map(v=>v.followY??v.y))-.006),bottom=Math.min(1,Math.max(...row.map(v=>(v.followY??v.y)+(v.followH??v.h)))+.006);out.tracks.push({id,page:n.page,y,h:bottom-y});trackIds.add(id)}return {track:id,x};}
  function at(t){const m=positionAt(layer,t);if(m){const seg=layer.segments.find(s=>t>=s.start&&t<s.end);return pointAt(seg,t)}const n=regions.find(n=>t>=n.start&&t<n.end);if(!n||n.holding)throw Error('选区含未定位位置，请先框选谱行并人工录制');const u=Math.max(0,Math.min(1,(t-n.start)/(n.end-n.start)));return auto(n,n.x+n.w*u)}
  let points=[];
