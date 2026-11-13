@@ -44,7 +44,8 @@ const loadLyricsSong=loadSong;
 loadSong=async function(song){
  const version=++songLoadVersion;
  const base=song.base||`library/${song.id}/`;
- const mapRequest=fetch(base+'score-map.json',{cache:'no-cache'})
+ const mapUrl=base+'score-map.json'+(song.scoreRevision?'?v='+song.scoreRevision:'');
+ const mapRequest=fetch(mapUrl,{cache:'no-cache'})
   .then(response=>response.ok?response.json():null).catch(()=>null);
  const manualRequest=fetchManualForSong(song);
  if(!await loadLyricsSong(song,version)||version!==songLoadVersion)return;

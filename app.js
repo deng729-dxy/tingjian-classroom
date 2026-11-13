@@ -8,7 +8,7 @@ let pitchCandidates=[],seekEpoch=0;
 let lastFollowLine='';
 let activeBeats=[],activeManual=null,manualEditorOpen=false;
 const reducedFollowMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
-let paintedCursor=null, paintedSweep=null, paintedRow='', paintedMapStatus='';
+let paintedCursor=null, paintedSweep=null, paintedRow='', paintedMapStatus='', sweepKey='', sweepEvents=null, sweepOrigin=0;
 function clearFollowPaint(){
  if(paintedCursor)paintedCursor.hidden=true;
  if(paintedSweep)paintedSweep.hidden=true;
@@ -47,8 +47,13 @@ function renderFollow(t){
   const sweep=$('followStyle').value==='sweep'&&!note?.holding;
   paintedSweep.hidden=!sweep;
   if(sweep){
-   const start=scoreSweepStart(events,here);
-   paintedSweep.style.transform=`translateX(${start*100}%) scaleX(${Math.max(0,here.x-start)})`;
+   const key=here.source==='manual'?rowKey:here.index;
+   if(key!==sweepKey||sweepEvents!==events){
+    sweepOrigin=scoreSweepStart(events,here);
+    sweepKey=key;
+    sweepEvents=events;
+   }
+   paintedSweep.style.transform=`translateX(${sweepOrigin*100}%) scaleX(${Math.max(0,here.x-sweepOrigin)})`;
   }
  }else clearFollowPaint();
  if(!$('follow').checked)return;
