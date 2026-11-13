@@ -8,14 +8,49 @@ let pitchCandidates=[],seekEpoch=0;
 let lastFollowLine='';
 let activeBeats=[],activeManual=null,manualEditorOpen=false;
 const reducedFollowMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
-document.querySelectorAll('.page').forEach(p=>{const bar=document.createElement('div');bar.className='follow-bar';bar.hidden=true;p.append(bar)});
+let paintedCursor=null, paintedSweep=null, paintedRow='', paintedMapStatus='';
+function clearFollowPaint(){
+ if(paintedCursor)paintedCursor.hidden=true;
+ if(paintedSweep)paintedSweep.hidden=true;
+ paintedCursor=paintedSweep=null;
+ paintedRow='';
+}
 function renderFollow(t){
  if(manualEditorOpen){manualEditorRender(t);return;}
  const here=ManualPath.positionAt(activeManual,t)||scorePositionAt(events,t);
- document.querySelectorAll('.follow-bar').forEach(b=>b.hidden=true);
- if(!here)return;if($('scores').dataset.mode==='melody_alignment')$('mapStatus').textContent=here.source==='manual'?'教师人工路径 · 已保存片段':events[here.index].holding?events[here.index].text+' · 当前位置保持':'旋律跟随 · 音符 '+events[here.index].text+' · 自动对齐';
- const page=document.querySelector(`[data-page="${here.page}"]`);if(!page)return;const bar=page.querySelector('.follow-bar');
- if($('showBar').checked){bar.hidden=false;bar.style.left=here.x*100+'%';bar.style.top=(here.y-.008)*100+'%';bar.style.height=(here.h+.016)*100+'%';const pulse=playing&&!reducedFollowMotion.matches?scoreBeatPulseAt(activeBeats,t):0;bar.style.filter=`brightness(${1+pulse*.3})`;bar.style.boxShadow=`0 0 0 ${3+pulse}px #92e5d535,0 0 ${12+pulse*7}px #4ebba175`;}
+ if(!here){clearFollowPaint();return;}
+ const note=events[here.index];
+ if($('scores').dataset.mode==='melody_alignment'){
+  const message=here.source==='manual'?'教师人工路径 · 已保存片段':note.holding?note.text+' · 当前位置保持':'旋律跟随 · 音符 '+note.text+' · 自动对齐';
+  if(message!==paintedMapStatus||$('mapStatus').textContent!==message)$('mapStatus').textContent=paintedMapStatus=message;
+ }
+ const page=$('scores').querySelector(`[data-page="${here.page}"]`);
+ if(!page){clearFollowPaint();return;}
+ if($('showBar').checked){
+  if(paintedCursor?.parentElement!==page){
+   clearFollowPaint();
+   paintedCursor=page.querySelector('.follow-bar')||page.appendChild(document.createElement('div'));
+   paintedCursor.className='follow-bar follow-edge';
+   paintedSweep=page.querySelector('.follow-sweep')||page.appendChild(document.createElement('div'));
+   paintedSweep.className='follow-sweep';
+  }
+  const rowKey=here.page+':'+here.y+':'+here.h;
+  if(rowKey!==paintedRow){
+   for(const layer of [paintedCursor,paintedSweep]){
+    layer.style.top=Math.max(0,here.y-.008)*100+'%';
+    layer.style.height=(here.h+.016)*100+'%';
+   }
+   paintedRow=rowKey;
+  }
+  paintedCursor.hidden=false;
+  paintedCursor.style.transform=`translateX(${here.x*100}%)`;
+  const sweep=$('followStyle').value==='sweep'&&!note?.holding;
+  paintedSweep.hidden=!sweep;
+  if(sweep){
+   const start=scoreSweepStart(events,here);
+   paintedSweep.style.transform=`translateX(${start*100}%) scaleX(${Math.max(0,here.x-start)})`;
+  }
+ }else clearFollowPaint();
  if(!$('follow').checked)return;
  // Preview the upcoming location without moving the current-time indicator ahead.
  const ahead=ManualPath.positionAt(activeManual,t+Number($('lookAhead').value)*Number($('speed').value))||scorePositionAt(events,t+Number($('lookAhead').value)*Number($('speed').value))||here;
@@ -23,12 +58,13 @@ function renderFollow(t){
  if(key===lastFollowLine)return;
  lastFollowLine=key;
  const nextPage=document.querySelector(`[data-page="${ahead.page}"]`);
+ if(!nextPage)return;
  const y=nextPage.getBoundingClientRect().top+ahead.y*nextPage.clientHeight;
  if(y>innerHeight-document.querySelector('footer').offsetHeight-90||y<100)window.scrollTo({top:Math.max(0,scrollY+y-innerHeight*.32),behavior:'smooth'});
 }
 $('follow').onchange=()=>{lastFollowLine='';renderFollow(audios[0].currentTime||0)};
 $('lookAhead').onchange=()=>{lastFollowLine='';renderFollow(audios[0].currentTime||0)};
-$('showBar').onchange=()=>renderFollow(audios[0].currentTime||0);
+$('showBar').onchange=$('followStyle').onchange=()=>renderFollow(audios[0].currentTime||0);
 const status=t=>$('status').textContent=t;
 const clock=t=>`${Math.floor(t/60).toString().padStart(2,'0')}:${Math.floor(t%60).toString().padStart(2,'0')}`;
 function pause(){seekResume=false;audios.forEach(a=>a.pause());playing=false;$('play').textContent='▶ 播放';}
@@ -59,7 +95,7 @@ function draw(){const pitched=events.filter(n=>!n.rest&&!n.holding&&n.midi>0);if
 function scrub(e){if((!events.length&&!pitchCandidates.length)||!duration)return;const r=$('contour').getBoundingClientRect();previewScrub((e.clientX-r.left)/r.width*(events.at(-1)?.end||duration))}
 $('contour').onpointerdown=e=>{$('contour').setPointerCapture(e.pointerId);beginScrub();scrub(e)};$('contour').onpointermove=e=>{if($('contour').hasPointerCapture(e.pointerId))scrub(e)};
 $('contour').onpointerup=endScrub;$('contour').onpointercancel=endScrub;
-function render(){if(manualEditorOpen){manualEditorRender(audios[0].currentTime||0);return}if(dragging){renderFollow(previewTime||0);return}const t=audios[0].currentTime||0;renderFollow(t);$('time').textContent=`${clock(t)} / ${clock(duration)}`;$('seek').value=t;let idx=events.findIndex(n=>t>=n.start&&t<n.end);const manual=ManualPath.positionAt(activeManual,t);if(manual){idx=events.findIndex(n=>!n.holding&&n.page===manual.page&&manual.x>=n.x&&manual.x<=n.x+n.w&&Math.abs((n.followY??n.y)-manual.y)<manual.h);}if(idx!==lastNote){document.querySelectorAll('.note').forEach(b=>{const i=Number(b.dataset.index);b.classList.toggle('active',i===idx);b.classList.toggle('next',idx>=0&&i===idx+1)});if(false){const next=events[Math.min(idx+1,events.length-1)];const p=document.querySelector(`[data-page="${next.page}"]`);const y=p.getBoundingClientRect().top+next.y*p.clientHeight;if(y>innerHeight-260||y<120)window.scrollTo({top:Math.max(0,scrollY+y-innerHeight*.3),behavior:'smooth'})}lastNote=idx}const cursor=$('cursor');if(cursor){const x=t/events.at(-1).end*1000;cursor.setAttribute('x1',x);cursor.setAttribute('x2',x)}}
+function render(){if(manualEditorOpen){manualEditorRender(audios[0].currentTime||0);return}if(dragging){renderFollow(previewTime||0);return}const t=audios[0].currentTime||0;renderFollow(t);$('time').textContent=`${clock(t)} / ${clock(duration)}`;$('seek').value=t;let idx=events.findIndex(n=>t>=n.start&&t<n.end);const manual=ManualPath.positionAt(activeManual,t);if(manual){idx=events.findIndex(n=>!n.holding&&n.page===manual.page&&manual.x>=n.x&&manual.x<=n.x+n.w&&Math.abs((n.followY??n.y)-manual.y)<manual.h);}if(idx!==lastNote){for(const index of [lastNote,lastNote+1])if(index>=0)document.querySelector(`.note[data-index="${index}"]`)?.classList.remove('active','next');if(idx>=0){document.querySelector(`.note[data-index="${idx}"]`)?.classList.add('active');document.querySelector(`.note[data-index="${idx+1}"]`)?.classList.add('next');}if(false){const next=events[Math.min(idx+1,events.length-1)];const p=document.querySelector(`[data-page="${next.page}"]`);const y=p.getBoundingClientRect().top+next.y*p.clientHeight;if(y>innerHeight-260||y<120)window.scrollTo({top:Math.max(0,scrollY+y-innerHeight*.3),behavior:'smooth'})}lastNote=idx}const cursor=$('cursor');if(cursor){const x=t/events.at(-1).end*1000;cursor.setAttribute('x1',x);cursor.setAttribute('x2',x)}}
 setInterval(()=>{if(playing){if(audios[0].currentTime>=duration){pause();return}const drift=audios[1].currentTime-audios[0].currentTime,rate=Number($('speed').value);if(!seekController.busy){if(Math.abs(drift)>.4){seek(audios[0].currentTime);return}/* Playback rate changes only when the teacher selects a speed. */}}render()},250);
 function animationFrame(){if(playing||dragging)render();requestAnimationFrame(animationFrame)}requestAnimationFrame(animationFrame);
 // Built-in stems share the untouched MV timeline. No automatic playback.

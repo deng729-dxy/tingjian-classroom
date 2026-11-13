@@ -9,6 +9,19 @@ function positionAt(notes,time){
  const localSweep=!a.holding&&(a.kind==='extension'||a.rest)?a.w*.5*progress:0;
  return {page:a.page,x:a.sweep?a.x+a.w*progress:a.x+a.w/2+(sameLine?(b.x+b.w/2-a.x-a.w/2)*progress:localSweep),y,h,index:i};
 }
+function sweepStart(notes,position){
+ const {page,y,h,index,x}=position;
+ const sameRow=note=>note.page===page&&!note.holding&&Math.abs((note.followY??note.y)-y)<Math.max(h,note.followH??note.h)*.7;
+ if(index<0){
+  // Manual paths supply the active row and time. Find its printed left edge.
+  const candidates=notes.filter(sameRow);
+  return candidates.length?Math.min(x,...candidates.map(note=>note.x)):x;
+ }
+ let first=index;
+ while(first>0&&sameRow(notes[first-1])&&notes[first].x>=notes[first-1].x)first--;
+ return Math.min(x,notes[first].x);
+}
+scope.scoreSweepStart=sweepStart;
 scope.scorePositionAt=positionAt;
 function beatPulseAt(grid,time){
  let lo=0,hi=grid.length-1,found=-1;
@@ -18,5 +31,5 @@ function beatPulseAt(grid,time){
  return delta<.18?Math.pow(1-delta/.18,2):0;
 }
 scope.scoreBeatPulseAt=beatPulseAt;
-if(typeof module!=='undefined')module.exports={positionAt,beatPulseAt};
+if(typeof module!=='undefined')module.exports={positionAt,beatPulseAt,sweepStart};
 })(typeof window!=='undefined'?window:globalThis);
