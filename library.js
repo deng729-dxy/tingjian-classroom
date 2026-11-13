@@ -36,31 +36,84 @@ renameDialog.addEventListener('cancel',e=>{if(managementBusy)e.preventDefault()}
 async function refreshLibrary(){try{const [stateResponse,r]=await Promise.all([fetch('library-state.json?v='+Date.now(),{cache:'no-store'}),fetch('catalog.json?v='+Date.now(),{cache:'no-store'})]);if(stateResponse.ok){const state=await stateResponse.json();builtinHidden=!!state.builtinHidden;builtinLabel=state.builtinLabel||'';if(state.builtinTitle){firstTitle=state.builtinTitle;document.querySelector('aside > .song').firstChild.textContent=firstTitle+' ';if(selectedSong?.id==='builtin')document.querySelector('header h1').textContent=firstTitle;}document.querySelector('aside > .song').firstChild.textContent=(builtinLabel?builtinLabel+' · ':'')+firstTitle+' ';document.querySelector('aside > .song').hidden=builtinHidden;}if(!r.ok)return;librarySongs=await r.json();if(!initialSongLoaded){initialSongLoaded=true;if(!builtinHidden)loadSong({id:'builtin',title:firstTitle,base:'assets/',reference:'assets/mv-reference.m4a'});else if(librarySongs.some(s=>s.state==='ready'))loadSong(librarySongs.find(s=>s.state==='ready'));else emptyLibrary()}songList.replaceChildren();librarySongs.forEach((song,i)=>{const b=document.createElement('button');b.className='song';const title=document.createElement('span');title.textContent=`${song.displayLabel??('曲目 '+(i+2))}${(song.displayLabel??('曲目 '+(i+2)))?' · ':''}${song.title}`;const sub=document.createElement('small');sub.textContent=(song.manualRangeCount?'部分人工校准（'+song.manualRangeCount+'段） · ':'')+song.stage+(song.cloudMessage?' · '+song.cloudMessage:'');if(song.replacement)sub.textContent+=' · '+song.replacement.message+(song.replacement.status==='processing'?'（阶段估算 '+song.replacement.progress+'%）':'');b.append(title,sub);b.disabled=song.state!=='ready';b.onclick=()=>loadSong(song);const entry=document.createElement('div');entry.className='library-entry';entry.append(b);if(ownerAccess){if(song.state==='ready'){const retry=document.createElement('button');retry.className='delete-song';retry.textContent='重新对齐';retry.setAttribute('aria-label','重新对齐曲目 '+song.title);retry.disabled=song.alignmentState==='processing';retry.onclick=()=>realignSong(song.id,retry);entry.append(retry)}if(song.replacement&&['uploading','processing','failed'].includes(song.replacement.status)){const details=document.createElement('button');details.className='delete-song';details.textContent='查看素材更新';details.onclick=()=>openMaterials(song);entry.append(details)}}addSelection(entry,song.id,song.title);songList.append(entry)});renderManagement();observeMaterialUpdates();if(!manualEditorOpen&&selectedSong){const current=librarySongs.find(s=>s.id===selectedSong.id);if(current&&(current.manualFollowRevision||0)!==(selectedSong.manualFollowRevision||0)){selectedSong.manualFollowRevision=current.manualFollowRevision;readManualForSong(current);}}const current=librarySongs.find(s=>s.id===importId);if(current&&!transferring)importPercent(current.progress||0,current.stage+'（处理阶段估算）');const running=librarySongs.find(s=>s.state==='processing');if(!current&&!transferring&&running)$('importProgress').textContent=running.stage;}catch{}}
 function resetTracks(){bufferProgress.reset();seekController.cancel();dragging=false;previewTime=null;pause();$('reference').pause();events=[];activeManual=null;activeBeats=[];lastNote=-1;lastFollowLine='';pitchCandidates=[];duration=0;$('seek').disabled=true;$('play').disabled=true;activeLyric=-1;$('speed').value='1';$('bg').value='100';$('vg').value='50';volume();audios.forEach(a=>{a.playbackRate=1});$('contour').replaceChildren();$('contourEmpty').hidden=false;}
 let songLoadVersion=0;
-async function loadSong(song,version){try{const r=await fetch(versionedUrl((song.base||`library/${song.id}/`)+'lyrics.json',song),{cache:'no-store'});if(!r.ok)throw Error('歌词文件不可用');const data=await r.json();if(version!==songLoadVersion)return false;resetTracks();selectedSong=song;lyricRows=data.lyrics;const base=song.base||`library/${song.id}/`;document.querySelector('header h1').textContent=song.title;document.querySelector('header a').href=versionedUrl(base+'practice.pdf',song);document.querySelector('header a').textContent='下载歌词练唱 PDF ↗';$('reference').src=versionedUrl(song.reference||base+'source.mp4',song);$('scores').replaceChildren();const caption=document.createElement('p');caption.className='notice';caption.textContent='歌词跟随模式 · 自动识别待核对。点击句子可跳转，绿色指示条按该句时间移动。此模式不表示简谱逐音定位。';$('scores').append(caption);lyricRows.forEach((line,i)=>{const row=document.createElement('button');row.className='lyric-row';row.dataset.lyric=i;const time=document.createElement('small');time.textContent=clock(line.start);const text=document.createElement('span');text.textContent=line.text;const bar=document.createElement('i');bar.className='lyric-follow-bar';bar.hidden=true;row.append(time,text,bar);row.onclick=()=>seek(line.start);$('scores').append(row)});$('mapStatus').textContent='按识别歌词时间跟随 · 未人工校准';$('contourEmpty').textContent='曲目旋律时间轴';audios[0].src=versionedUrl(base+'accompaniment.m4a',song);audios[1].src=versionedUrl(base+'vocals.m4a',song);audios.forEach(a=>a.load());bufferProgress.start();dialog.close();return true;}catch(e){if(version===songLoadVersion)status('曲目加载失败：'+e.message);return false;}}
+function startSong(song,base){
+ resetTracks();
+ selectedSong=song;
+ scoreMode=false;
+ lyricRows=[];
+ document.querySelector('header h1').textContent=song.title;
+ document.querySelector('header a').href=versionedUrl(base+'practice.pdf',song);
+ document.querySelector('header a').textContent='下载歌词练唱 PDF ↗';
+ $('reference').src=versionedUrl(song.reference||base+'source.mp4',song);
+ $('scores').dataset.mode='';
+ $('scores').replaceChildren();
+ $('mapStatus').textContent='正在加载谱面…';
+ $('contourEmpty').textContent='曲目旋律时间轴';
+ status('正在加载伴奏和导唱…');
+ audios[0].src=versionedUrl(base+'accompaniment.m4a',song);
+ audios[1].src=versionedUrl(base+'vocals.m4a',song);
+ audios.forEach(audio=>audio.load());
+ bufferProgress.start();
+ dialog.close();
+}
+async function showLyricFallback(song,base,version){
+ try{
+  const response=await fetch(versionedUrl(base+'lyrics.json',song),{cache:'no-cache'});
+  if(!response.ok)throw Error('歌词文件不可用');
+  const data=await response.json();
+  if(version!==songLoadVersion||scoreMode)return;
+  if(activeManual){renderManualFallback(song);return;}
+  lyricRows=data.lyrics;
+  const caption=document.createElement('p');
+  caption.className='notice';
+  caption.textContent='歌词跟随模式 · 点击句子可跳转';
+  const content=document.createDocumentFragment();
+  content.append(caption);
+  lyricRows.forEach((line,i)=>{
+   const row=document.createElement('button');
+   row.className='lyric-row';
+   row.dataset.lyric=i;
+   const time=document.createElement('small');
+   time.textContent=clock(line.start);
+   const text=document.createElement('span');
+   text.textContent=line.text;
+   const bar=document.createElement('i');
+   bar.className='lyric-follow-bar';
+   bar.hidden=true;
+   row.append(time,text,bar);
+   row.onclick=()=>seek(line.start);
+   content.append(row);
+  });
+  $('scores').replaceChildren(content);
+  $('mapStatus').textContent='按识别歌词时间跟随 · 未人工校准';
+ }catch(error){
+  if(version===songLoadVersion&&!scoreMode)$('mapStatus').textContent='谱面暂不可用：'+error.message;
+ }
+}
 document.querySelector('aside > .song').onclick=()=>loadSong({id:'builtin',title:firstTitle,base:'assets/',reference:'assets/mv-reference.m4a'});
 setInterval(()=>{if(!selectedSong||scoreMode)return;const t=audios[0].currentTime||0;const i=lyricRows.findIndex(l=>t>=l.start&&t<l.end);document.querySelectorAll('.lyric-row').forEach((row,j)=>{row.classList.toggle('active',i===j);const bar=row.querySelector('i');bar.hidden=i!==j||!$('showBar').checked;if(i===j)bar.style.left=(12+Math.min(1,Math.max(0,(t-lyricRows[j].start)/(lyricRows[j].end-lyricRows[j].start)))*84)+'%'});const ahead=t+Number($('lookAhead').value)*Number($('speed').value);const next=lyricRows.findIndex(l=>ahead>=l.start&&ahead<l.end);if(next!==activeLyric&&next>=0&&$('follow').checked){activeLyric=next;const el=document.querySelector(`[data-lyric="${next}"]`);const rect=el.getBoundingClientRect();if(rect.top<100||rect.bottom>innerHeight-document.querySelector('footer').offsetHeight-50)window.scrollTo({top:Math.max(0,scrollY+rect.top-innerHeight*.3),behavior:'smooth'})}},80);
-refreshLibrary();setInterval(refreshLibrary,15000);
-const loadLyricsSong=loadSong;
-loadSong=async function(song){
+async function loadSong(song){
  const version=++songLoadVersion;
  const base=song.base||`library/${song.id}/`;
+ startSong(song,base);
  const mapUrl=base+'score-map.json'+(song.scoreRevision?'?v='+song.scoreRevision:'');
- const mapRequest=fetch(mapUrl,{cache:'no-cache'})
+ const mapRequest=fetch(mapUrl,{cache:song.scoreRevision?'force-cache':'no-cache'})
   .then(response=>response.ok?response.json():null).catch(()=>null);
- const manualRequest=fetchManualForSong(song);
- if(!await loadLyricsSong(song,version)||version!==songLoadVersion)return;
- scoreMode=false;
- // Paint the first available score independently of the manual-path request.
- manualRequest.then(data=>{
+ let mapUnavailable=false;
+ fetchManualForSong(song).then(data=>{
   if(version!==songLoadVersion||selectedSong?.id!==song.id)return;
   activeManual=data;
   if(data&&!scoreMode&&mapUnavailable)renderManualFallback(song);
  });
- let mapUnavailable=false;
  try{
  const map=await mapRequest;
  if(version!==songLoadVersion||selectedSong?.id!==song.id)return;
- if(!map){mapUnavailable=true;if(activeManual)renderManualFallback(song);return;}
+ if(!map){
+  mapUnavailable=true;
+  if(activeManual)renderManualFallback(song);
+  else await showLyricFallback(song,base,version);
+  return;
+ }
 
  scoreMode=true;activeBeats=(map.beatGrid||[]).slice().sort((a,b)=>a.time-b.time);$('scores').dataset.mode=map.mode;document.querySelector('header p:not(.label)').textContent='用户上传原谱 · MV 自动分轨 · 歌词时间待核对';document.querySelector('.score-tools > span').textContent='原版简谱 · '+map.pages.length+' 页';document.querySelector('header a').href=versionedUrl(base+'score.pdf',song);document.querySelector('header a').textContent='下载原谱 PDF ↗';$('scores').replaceChildren();
  const warning=document.createElement('p');warning.className='notice';warning.textContent=map.mode==='melody_alignment'?`旋律动态跟谱 · ${map.quality?`已识别 ${map.quality.recognizedRows} 行，路线覆盖 ${map.quality.visitedRows} 行。`:''}${map.routeDescription||'按谱面顺序'}。${map.warning||'自动对齐，尚未逐音核验。'}`:`原谱歌词自动匹配覆盖 ${Math.round(map.coverage*100)}% · 待核对。重复段落可能错配，未匹配处指示条隐藏。这是按歌词区域跟随，不是逐音定位。`;$('scores').append(warning);
@@ -83,8 +136,13 @@ loadSong=async function(song){
  }
  (map.unresolved||[]).forEach((u,i)=>{const row=document.createElement('p');const label=document.createElement('label');label.textContent=clock(u.start)+' '+u.text+' ';const select=document.createElement('select');select.add(new Option('待确认，暂不显示',''));u.candidates.forEach((c,n)=>select.add(new Option(`第${c.page}页，距页顶${Math.round(c.y*100)}%：${c.text}`,n)));select.value=choices[i]??'';select.onchange=()=>{if(select.value==='')delete choices[i];else choices[i]=Number(select.value);try{localStorage.setItem(song.id+'-'+(song.mediaRevision||'original')+'-repeat-choices',JSON.stringify(choices))}catch{status('浏览器无法保存，请允许本机存储')}redraw()};const listen=document.createElement('button');listen.textContent='定位试听';listen.onclick=()=>seek(u.start);label.append(select);row.append(label,listen);review.append(row)});warning.after(review);redraw();if(map.mode==='melody_alignment'){draw();$('contourEmpty').textContent='简谱音级走势 · 自动识别';const mainNotice=document.querySelector('main > .notice');mainNotice.querySelector('strong').textContent='旋律动态跟谱 · 自动估计待核验';mainNotice.querySelector('p').textContent='指示条跟随音频位置，支持反复回跳、点击谱面定位与提前翻页。自动识别结果仍需核对音符与节奏。';}
  $('mapStatus').textContent=map.mode==='melody_alignment'?'旋律对齐 · 自动估计':'歌词区域自动匹配 · 未逐音校准';lastNote=-1;lastFollowLine='';
- }catch(e){if(activeManual)renderManualFallback(song);else status('原谱加载失败：'+e.message)}
-};
+ }catch(e){
+  if(version!==songLoadVersion)return;
+  scoreMode=false;mapUnavailable=true;
+  if(activeManual)renderManualFallback(song);
+  else await showLyricFallback(song,base,version);
+ }
+}
 
 // Teacher access is enforced by the local server as well as the interface.
 const teacherControls=document.createElement('div');teacherControls.className='teacher-controls';
@@ -141,3 +199,5 @@ syncButton.onclick=async()=>{try{const r=await fetch('/api/admin/sync');const d=
 
 const textCalibrationButton=document.createElement('button');textCalibrationButton.textContent='文字指导校准';textCalibrationButton.className='import-button';textCalibrationButton.hidden=true;managementBar.after(textCalibrationButton);setInterval(()=>{textCalibrationButton.hidden=!ownerAccess},1000);
 textCalibrationButton.onclick=()=>{const ready=librarySongs.filter(s=>s.state==='ready');if(!ready.length)return status('请先导入一首歌曲');const box=document.createElement('dialog');box.className='import-dialog';const title=document.createElement('h2');title.textContent='选择文字校准曲目';const select=document.createElement('select');for(const song of ready)select.add(new Option(song.title,song.id));if(ready.some(s=>s.id===selectedSong?.id))select.value=selectedSong.id;const open=document.createElement('button');open.textContent='打开校准';open.onclick=async()=>{const song=ready.find(s=>s.id===select.value);box.close();await openManualEditor(song);const panel=manualDialog.querySelector('[data-text-panel]');if(panel){panel.open=true;panel.querySelector('textarea').focus()}};const close=document.createElement('button');close.textContent='取消';close.onclick=()=>box.close();box.append(title,select,open,close);box.onclose=()=>box.remove();document.body.append(box);box.showModal()};
+
+refreshLibrary();setInterval(refreshLibrary,15000);
